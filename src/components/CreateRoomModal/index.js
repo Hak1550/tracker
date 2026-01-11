@@ -144,7 +144,7 @@ const CreateRoomModal = ({
               editable={false}
             />
             <CustomInput
-              label="First Wall (mm)"
+              label="First Wall (cm)"
               placeholder="Enter length of first wall"
               style={styles.input}
               value={roomData.A0_A1}
@@ -154,7 +154,7 @@ const CreateRoomModal = ({
               keyboardType="numeric"
             />
             <CustomInput
-              label="Second Wall (mm)"
+              label="Second Wall (cm)"
               placeholder="Enter length of second wall"
               style={styles.input}
               value={roomData.A1_A2}
@@ -164,7 +164,7 @@ const CreateRoomModal = ({
               keyboardType="numeric"
             />
             <CustomInput
-              label="Third Wall (mm)"
+              label="Third Wall (cm)"
               placeholder="Enter length of third wall"
               style={styles.input}
               value={roomData.A2_A3}
@@ -174,7 +174,7 @@ const CreateRoomModal = ({
               keyboardType="numeric"
             />
             <CustomInput
-              label="Fourth Wall (mm)"
+              label="Fourth Wall (cm)"
               placeholder="Enter length of fouth wall"
               style={styles.input}
               value={roomData.A3_A0}

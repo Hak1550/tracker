@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,18 +7,27 @@ import {
   ImageBackground,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { useSelector } from 'react-redux';
+import io from 'socket.io-client';
 import { Colors } from '../../utils/colors';
 import CustomHeader from '../../components/CustomHeader';
 import { images } from '../../assets/images/images';
 import { styles } from './styles';
 
 const { width: WIDTH, height: HEIGHT } = Dimensions.get('window');
+const WEBSOCKET_URL = 'http://15.204.231.252:8000';
 
 const VisualizeRoomScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { visualizeData } = route.params || {};
+  const { visualizeData: initialVisualizeData, roomId } = route.params || {};
+  const token = useSelector((state) => state.auth.token);
+  const [visualizeData, setVisualizeData] = useState(initialVisualizeData || {});
   const [tags, setTags] = useState([]);
+  const socketRef = useRef(null);
+  
+  // Get room_id from visualizeData or route params
+  const room_id = visualizeData?.room_id || roomId;
 
   // Memoize coordinate calculation to prevent infinite loops
   const { anchors, bounds, centerX, centerY, roomImage } = useMemo(() => {
@@ -134,6 +143,88 @@ const VisualizeRoomScreen = () => {
       setTags([]);
     }
   }, [visualizeData?.tag_positions, bounds?.minX, bounds?.minY, bounds?.maxX, bounds?.maxY]);
+
+  // WebSocket connection and real-time updates
+  useEffect(() => {
+    if (!token || !room_id || !visualizeData?.mqtt_topic) {
+      return;
+    }
+
+    // Connect to WebSocket server
+    const socket = io(WEBSOCKET_URL, {
+      auth: { token },
+      transports: ['websocket', 'polling'],
+    });
+
+    socketRef.current = socket;
+
+    // Handle connection
+    socket.on('connect', () => {
+      console.log('WebSocket connected');
+    });
+
+    // Handle successful authentication
+    socket.on('connected', (data) => {
+      console.log('WebSocket authenticated:', data);
+      
+      // Start visualization
+      socket.emit('start_visualization', {
+        room_id: room_id,
+        mqtt_topic: visualizeData.mqtt_topic,
+        update_interval: 0.5,
+      });
+    });
+
+    // Handle visualization started
+    socket.on('visualization_started', (data) => {
+      console.log('Visualization started:', data);
+    });
+
+    // Handle real-time position updates
+    socket.on('position_update', (data) => {
+      console.log('Position update received:', data);
+      
+      // Update visualization data with new positions
+      setVisualizeData((prev) => ({
+        ...prev,
+        anchor_positions: data.anchor_positions || prev.anchor_positions,
+        tag_positions: data.tag_positions || prev.tag_positions,
+        room_dimensions_in: data.room_dimensions_in || prev.room_dimensions_in,
+        timestamp: data.timestamp,
+      }));
+    });
+
+    // Handle visualization stopped
+    socket.on('visualization_stopped', (data) => {
+      console.log('Visualization stopped:', data);
+    });
+
+    // Handle errors
+    socket.on('error', (data) => {
+      console.error('WebSocket error:', data);
+    });
+
+    // Cleanup on unmount
+    return () => {
+      if (socket && socket.connected) {
+        socket.emit('stop_visualization');
+        socket.disconnect();
+      }
+      socketRef.current = null;
+    };
+  }, [token, room_id, visualizeData?.mqtt_topic]);
+
+  // Cleanup on navigation away
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', () => {
+      if (socketRef.current && socketRef.current.connected) {
+        socketRef.current.emit('stop_visualization');
+        socketRef.current.disconnect();
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   return (
     <View style={styles.container}>
