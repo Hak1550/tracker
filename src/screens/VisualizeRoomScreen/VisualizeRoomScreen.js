@@ -9,7 +9,6 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 import io from 'socket.io-client';
-import { Colors } from '../../utils/colors';
 import CustomHeader from '../../components/CustomHeader';
 import { images } from '../../assets/images/images';
 import { styles } from './styles';
@@ -20,12 +19,11 @@ const WEBSOCKET_URL = 'http://15.204.231.252:8000';
 const VisualizeRoomScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { visualizeData: initialVisualizeData, roomId } = route.params || {};
+  const { visualizeData: initialVisualizeData, roomId, roomData } = route.params || {};
   const token = useSelector((state) => state.auth.token);
   const [visualizeData, setVisualizeData] = useState(initialVisualizeData || {});
   const [tags, setTags] = useState([]);
   const socketRef = useRef(null);
-  
   // Get room_id from visualizeData or route params
   const room_id = visualizeData?.room_id || roomId;
 
@@ -40,6 +38,7 @@ const VisualizeRoomScreen = () => {
         roomImage: null,
       };
     }
+    
 
     // Use room_dimensions_in from API if available, otherwise calculate from anchor positions
     let roomWidth, roomHeight;
@@ -67,12 +66,11 @@ const VisualizeRoomScreen = () => {
     const scale = Math.min(scaleX, scaleY);
 
     // Define corners: A0 (top-left), A1 (top-right), A2 (bottom-right), A3 (bottom-left)
-    // Position anchors exactly at the corners of the room bounds
     const corners = [
-      { x: padding, y: padding }, // Top-left (A0)
-      { x: padding + roomWidth * scale, y: padding }, // Top-right (A1)
-      { x: padding + roomWidth * scale, y: padding + roomHeight * scale }, // Bottom-right (A2)
-      { x: padding, y: padding + roomHeight * scale }, // Bottom-left (A3)
+      { x: padding, y: padding },
+      { x: padding + roomWidth * scale, y: padding },
+      { x: padding + roomWidth * scale, y: padding + roomHeight * scale },
+      { x: padding, y: padding + roomHeight * scale },
     ];
 
     // Map anchors to corners - sort by ID to ensure A0, A1, A2, A3 order
@@ -159,19 +157,21 @@ const VisualizeRoomScreen = () => {
     socketRef.current = socket;
 
     // Handle connection
-    socket.on('connect', () => {
-      console.log('WebSocket connected');
+    socket.on('connect', (data) => {
+      console.log('WebSocket connected', data);
     });
 
     // Handle successful authentication
     socket.on('connected', (data) => {
       console.log('WebSocket authenticated:', data);
+      console.log('room_id', room_id);
+      console.log('mqtt_topic', visualizeData.mqtt_topic);
+      console.log('update_interval', token);
       
       // Start visualization
       socket.emit('start_visualization', {
         room_id: room_id,
         mqtt_topic: visualizeData.mqtt_topic,
-        update_interval: 0.5,
       });
     });
 
@@ -182,7 +182,7 @@ const VisualizeRoomScreen = () => {
 
     // Handle real-time position updates
     socket.on('position_update', (data) => {
-      console.log('Position update received:', data);
+      // console.log('Position update received:', data);
       
       // Update visualization data with new positions
       setVisualizeData((prev) => ({
@@ -214,7 +214,7 @@ const VisualizeRoomScreen = () => {
     };
   }, [token, room_id, visualizeData?.mqtt_topic]);
 
-  // Cleanup on navigation away
+  // Cleanup on navigation away (e.g. gesture, system back)
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', () => {
       if (socketRef.current && socketRef.current.connected) {
@@ -226,19 +226,28 @@ const VisualizeRoomScreen = () => {
     return unsubscribe;
   }, [navigation]);
 
+  const handleBack = () => {
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('stop_visualization');
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    navigation.goBack();
+  };
+
   return (
     <View style={styles.container}>
       <CustomHeader
         title={visualizeData?.label || 'Room Visualization'}
         back
         navigation={navigation}
-        onBack={() => navigation.goBack()}
+        onBack={handleBack}
       />
       <View style={styles.visualizationContainer}>
         {/* Background Room Image - Stretched to corners */}
         {bounds && (
           <ImageBackground
-            source={roomImage ? { uri: roomImage } : images.room}
+            source={roomData?.image_url ? { uri: roomData?.image_url } : images.room}
             style={[
               styles.roomBackground,
               {

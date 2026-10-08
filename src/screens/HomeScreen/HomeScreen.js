@@ -9,6 +9,7 @@ import {
   Alert,
   ToastAndroid,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { styles } from './styles';
 import { Colors } from '../../utils/colors';
 import EmptyModal from '../../components/EmptyModal';
@@ -25,8 +26,11 @@ import {
   getEnrollDevicesThunk,
   postEnrollDeviceThunk,
   createRoomThunk,
+  updateRoomThunk,
   getDummyMqttDataThunk,
+  getRoomByIdThunk,
   visualizeRoomThunk,
+  getMqttHistoryThunk,
 } from '../../redux/deviceSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import dayjs from 'dayjs';
@@ -61,6 +65,16 @@ const HomeScreen = ({ navigation }) => {
     mqtt_topic: '',
     image: null,
   });
+  const [isEditRoomMode, setIsEditRoomMode] = useState(false);
+  const [editingRoomId, setEditingRoomId] = useState(null);
+  const [historyModalVisible, setHistoryModalVisible] = useState(false);
+  const [historyDate, setHistoryDate] = useState('');
+  const [historyHour, setHistoryHour] = useState(null); // null = full day, 0-23 = specific hour
+  const [historyMinute, setHistoryMinute] = useState(null); // null = whole hour, 0-59 = specific minute
+  const [historyTagId, setHistoryTagId] = useState(''); // optional filter, e.g. "1"
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showHourPicker, setShowHourPicker] = useState(false);
+  const [showMinutePicker, setShowMinutePicker] = useState(false);
   const [fields] = useState([
     {
       title: 'Device Name',
@@ -143,40 +157,48 @@ const HomeScreen = ({ navigation }) => {
     setLoading(true);
     
     try {
-      // Step 1: Call dummy-mqtt-data API
-      const dummyResult = await dispatch(
-        getDummyMqttDataThunk(selectedDevice?.mqtt_topic)
-      );
-      
-      if (getDummyMqttDataThunk.rejected.match(dummyResult)) {
-        showMessage(dummyResult.payload || 'Failed to get dummy mqtt data');
-        setLoading(false);
-        return;
+      // Real data path (API docs): when device has a room, use its room_id only.
+      // Do not call dummy MQTT — POST /api/visualize and WebSocket use data from
+      // POST /api/mqtt/data (real device data).
+      let roomId = selectedDevice?.room?.room_id;
+      if (!roomId) {
+        // Fallback: only when room_id is missing (e.g. device not bound to a room)
+        const dummyResult = await dispatch(
+          getDummyMqttDataThunk(selectedDevice?.mqtt_topic)
+        );
+        if (getDummyMqttDataThunk.rejected.match(dummyResult)) {
+          showMessage(dummyResult.payload || 'Failed to get room info');
+          setLoading(false);
+          return;
+        }
+        roomId = dummyResult.payload?.data?.room_id;
       }
 
-      // Get room_id from device or response
-      // The room_id should be in the device object if it has a bound room
-      const roomId = selectedDevice?.room?.room_id || dummyResult.payload?.data?.room_id;
-
-      console.log('roomId', roomId,selectedDevice,dummyResult);
-      
       if (!roomId) {
         showMessage('Room ID not found. Please create a room first.');
         setLoading(false);
         return;
       }
 
-      // Step 2: Call visualize API
+      const roomResult = await dispatch(getRoomByIdThunk(roomId));
+      if (getRoomByIdThunk.rejected.match(roomResult)) {
+        showMessage(roomResult.payload || 'Failed to get room data');
+        setLoading(false);
+        return;
+      }
+
+      // POST /api/visualize uses stored real data (from POST /api/mqtt/data)
       const visualizeResult = await dispatch(
         visualizeRoomThunk({
           roomId: roomId,
           mqttTopic: selectedDevice?.mqtt_topic,
         })
       );
-
+      
       if (visualizeRoomThunk.fulfilled.match(visualizeResult)) {
         navigation.navigate('VisualizeRoom', {
           visualizeData: visualizeResult.payload?.data,
+          roomData: roomResult.payload?.data,
         });
       } else {
         showMessage(visualizeResult.payload || 'Failed to visualize room');
@@ -191,7 +213,8 @@ const HomeScreen = ({ navigation }) => {
 
   const handleCreateRoom = () => {
     setDeviceOptionsModal(false);
-    // Reset and pre-fill mqtt_topic from selected device
+    setIsEditRoomMode(false);
+    setEditingRoomId(null);
     setRoomData({
       A0_A1: '',
       A1_A2: '',
@@ -204,14 +227,42 @@ const HomeScreen = ({ navigation }) => {
     setCreateRoomModal(true);
   };
 
-  const handleEditDevice = () => {
+  const handleEditDevice = async () => {
     setDeviceOptionsModal(false);
-    // TODO: Open edit modal with device data pre-filled
-    if (selectedDevice) {
+    if (!selectedDevice) return;
+    const roomId = selectedDevice?.room?.room_id;
+    if (roomId) {
+      setLoading(true);
+      try {
+        const roomResult = await dispatch(getRoomByIdThunk(roomId));
+        if (getRoomByIdThunk.fulfilled.match(roomResult)) {
+          const r = roomResult.payload?.data?.data ?? roomResult.payload?.data ?? {};
+          setRoomData({
+            A0_A1: String(r.A0_A1 ?? r.a0_a1 ?? ''),
+            A1_A2: String(r.A1_A2 ?? r.a1_a2 ?? ''),
+            A2_A3: String(r.A2_A3 ?? r.a2_a3 ?? ''),
+            A3_A0: String(r.A3_A0 ?? r.a3_a0 ?? ''),
+            label: r.label ?? selectedDevice?.room?.label ?? '',
+            mqtt_topic: r.mqtt_topic ?? selectedDevice?.mqtt_topic ?? '',
+            image: r.image_url ? { uri: r.image_url } : r.image || null,
+          });
+          setIsEditRoomMode(true);
+          setEditingRoomId(roomId);
+          setCreateRoomModal(true);
+        } else {
+          showMessage(roomResult.payload || 'Failed to load room');
+        }
+      } catch (err) {
+        console.error('Edit room load error:', err);
+        showMessage('Failed to load room');
+      } finally {
+        setLoading(false);
+      }
+    } else {
       setDeviceData({
         deviceName: selectedDevice.deviceName || '',
         wifiName: selectedDevice.mobile_ssid || '',
-        password: '', // Don't pre-fill password for security
+        password: '',
       });
       setModalVisible(true);
     }
@@ -219,9 +270,11 @@ const HomeScreen = ({ navigation }) => {
 
   const handleDeleteDevice = () => {
     setDeviceOptionsModal(false);
+    console.log('selectedDevice',selectedDevice);
+    
     Alert.alert(
       'Delete Device',
-      `Are you sure you want to delete ${selectedDevice?.deviceName}?`,
+      `Are you sure you want to delete ${selectedDevice?.room?.label} room?`,
       [
         {
           text: 'Cancel',
@@ -232,7 +285,7 @@ const HomeScreen = ({ navigation }) => {
           text: 'Delete',
           onPress: () => {
             // TODO: Call delete API
-            showMessage(`${selectedDevice?.deviceName} deleted`);
+            showMessage(`${selectedDevice?.room?.label} deleted`);
             // dispatch(deleteDeviceThunk(selectedDevice.id));
             getEnrolledDevices();
           },
@@ -240,6 +293,62 @@ const HomeScreen = ({ navigation }) => {
         },
       ]
     );
+  };
+
+  const handleHistory = () => {
+    setDeviceOptionsModal(false);
+    setHistoryDate('');
+    setHistoryHour(null);
+    setHistoryMinute(null);
+    setHistoryTagId('');
+    setHistoryModalVisible(true);
+  };
+
+  const handleHistorySubmit = async () => {
+    const date = historyDate.trim();
+    if (!date) {
+      showMessage('Please select date');
+      return;
+    }
+    setLoading(true);
+    try {
+      const params = { date };
+      if (historyHour != null && historyHour >= 0 && historyHour <= 23) {
+        params.hour = historyHour;
+        if (historyMinute != null && historyMinute >= 0 && historyMinute <= 59) {
+          params.minute = historyMinute;
+        }
+      }
+      const tagIdVal = historyTagId.trim();
+      if (tagIdVal !== '') {
+        const n = parseInt(tagIdVal, 10);
+        if (!Number.isNaN(n)) params.tag_id = n;
+      }
+      const result = await dispatch(
+        getMqttHistoryThunk({
+          mqttTopic: selectedDevice?.mqtt_topic,
+          params,
+        }),
+      );
+      if (getMqttHistoryThunk.fulfilled.match(result)) {
+        setHistoryModalVisible(false);
+        setHistoryDate('');
+        setHistoryHour(null);
+        setHistoryMinute(null);
+        setHistoryTagId('');
+        navigation.navigate('HistoryVisualize', {
+          historyResponse: result.payload?.data,
+          roomLabel: selectedDevice?.room?.label,
+        });
+      } else {
+        showMessage(result.payload || 'Failed to load history');
+      }
+    } catch (err) {
+      console.error('History load error:', err);
+      showMessage('Failed to load history');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCreateRoomSubmit = async () => {
@@ -256,7 +365,6 @@ const HomeScreen = ({ navigation }) => {
 
     setLoading(true);
     try {
-      // Create FormData for multipart/form-data
       const formData = new FormData();
       formData.append('A0_A1', roomData.A0_A1);
       formData.append('A1_A2', roomData.A1_A2);
@@ -264,8 +372,8 @@ const HomeScreen = ({ navigation }) => {
       formData.append('A3_A0', roomData.A3_A0);
       formData.append('label', roomData.label);
       formData.append('mqtt_topic', roomData.mqtt_topic);
-      
-      if (roomData.image) {
+
+      if (roomData.image && roomData.image.uri) {
         formData.append('image', {
           uri: roomData.image.uri,
           type: roomData.image.type || 'image/jpeg',
@@ -273,27 +381,50 @@ const HomeScreen = ({ navigation }) => {
         });
       }
 
-      const resultAction = await dispatch(createRoomThunk(formData));
-      
-      if (createRoomThunk.fulfilled.match(resultAction)) {
-        showMessage('Room created successfully');
-        setCreateRoomModal(false);
-        setRoomData({
-          A0_A1: '',
-          A1_A2: '',
-          A2_A3: '',
-          A3_A0: '',
-          label: '',
-          mqtt_topic: selectedDevice?.mqtt_topic || '',
-          image: null,
-        });
-        getEnrolledDevices();
+      if (isEditRoomMode && editingRoomId) {
+        const resultAction = await dispatch(
+          updateRoomThunk({ roomId: editingRoomId, formData }),
+        );
+        if (updateRoomThunk.fulfilled.match(resultAction)) {
+          showMessage('Room updated successfully');
+          setCreateRoomModal(false);
+          setIsEditRoomMode(false);
+          setEditingRoomId(null);
+          setRoomData({
+            A0_A1: '',
+            A1_A2: '',
+            A2_A3: '',
+            A3_A0: '',
+            label: '',
+            mqtt_topic: selectedDevice?.mqtt_topic || '',
+            image: null,
+          });
+          getEnrolledDevices();
+        } else {
+          showMessage(resultAction.payload || 'Failed to update room');
+        }
       } else {
-        showMessage(resultAction.payload || 'Failed to create room');
+        const resultAction = await dispatch(createRoomThunk(formData));
+        if (createRoomThunk.fulfilled.match(resultAction)) {
+          showMessage('Room created successfully');
+          setCreateRoomModal(false);
+          setRoomData({
+            A0_A1: '',
+            A1_A2: '',
+            A2_A3: '',
+            A3_A0: '',
+            label: '',
+            mqtt_topic: selectedDevice?.mqtt_topic || '',
+            image: null,
+          });
+          getEnrolledDevices();
+        } else {
+          showMessage(resultAction.payload || 'Failed to create room');
+        }
       }
     } catch (err) {
-      console.error('Create room error:', err);
-      showMessage('Failed to create room');
+      console.error('Room submit error:', err);
+      showMessage(isEditRoomMode ? 'Failed to update room' : 'Failed to create room');
     } finally {
       setLoading(false);
     }
@@ -313,7 +444,7 @@ const HomeScreen = ({ navigation }) => {
         />
         <View>
           <Text style={styles.deviceName}>
-            {item.deviceName ?? 'Device Name'}
+            {item.room?.label ?? 'Room Name'}
           </Text>
           <Text style={styles.deviceDesc}>
             Enrolled on {dayjs(item.enrolled_at).format('DD-MMM-YYYY')}
@@ -440,7 +571,7 @@ const HomeScreen = ({ navigation }) => {
     ]);
   };
 
-  // console.log('api status', deviceData, modalVisible);
+  console.log('api status', enrollDevices, );
 
   return (
     <View style={styles.container}>
@@ -528,17 +659,222 @@ const HomeScreen = ({ navigation }) => {
         onCreateRoom={handleCreateRoom}
         onEdit={handleEditDevice}
         onDelete={handleDeleteDevice}
+        onHistory={handleHistory}
       />
+
+      <Modal
+        visible={historyModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setHistoryModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>History – Select date</Text>
+
+            <Text style={[styles.modalTitle, { fontSize: 14, marginBottom: 4 }]}>
+              Date (required)
+            </Text>
+            <TouchableOpacity
+              style={[styles.input, { justifyContent: 'center', minHeight: 48 }]}
+              onPress={() => setShowDatePicker(true)}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={{
+                  fontSize: 16,
+                  color: historyDate ? Colors.blackColor : Colors.mediumGrayColor,
+                }}
+              >
+                {historyDate || 'Tap to pick date'}
+              </Text>
+            </TouchableOpacity>
+
+            {historyDate ? (
+              <>
+                <Text style={[styles.modalTitle, { fontSize: 14, marginBottom: 4, marginTop: 12 }]}>
+                  Hour (optional)
+                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.input,
+                    { justifyContent: 'center', minHeight: 48 },
+                    historyHour != null && { borderColor: Colors.primary, borderWidth: 2 },
+                  ]}
+                  onPress={() => setShowHourPicker(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      color: historyHour != null ? Colors.blackColor : Colors.mediumGrayColor,
+                    }}
+                  >
+                    {historyHour != null ? `Hour ${historyHour}` : 'Tap to pick hour'}
+                  </Text>
+                </TouchableOpacity>
+
+                {historyHour != null ? (
+                  <>
+                    <Text style={[styles.modalTitle, { fontSize: 14, marginBottom: 4, marginTop: 12 }]}>
+                      Minute (optional)
+                    </Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.input,
+                        { justifyContent: 'center', minHeight: 48 },
+                        historyMinute != null && { borderColor: Colors.primary, borderWidth: 2 },
+                      ]}
+                      onPress={() => setShowMinutePicker(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 16,
+                          color: historyMinute != null ? Colors.blackColor : Colors.mediumGrayColor,
+                        }}
+                      >
+                        {historyMinute != null ? `Minute ${historyMinute}` : 'Tap to pick minute'}
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                ) : null}
+
+                <Text style={[styles.modalTitle, { fontSize: 14, marginBottom: 4, marginTop: 12 }]}>
+                  Tag ID (optional)
+                </Text>
+                <CustomInput
+                  value={historyTagId}
+                  onChangeText={setHistoryTagId}
+                  placeholder="e.g. 1 – leave empty for all tags"
+                  keyboardType="number-pad"
+                  style={{ marginBottom: 0 }}
+                />
+              </>
+            ) : null}
+
+            {showDatePicker && (
+              <>
+                <DateTimePicker
+                  value={historyDate ? dayjs(historyDate).toDate() : new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(event, date) => {
+                    if (Platform.OS === 'android') {
+                      setShowDatePicker(false);
+                      if (event.type === 'set' && date) {
+                        setHistoryDate(dayjs(date).format('YYYY-MM-DD'));
+                      }
+                    } else if (date) {
+                      setHistoryDate(dayjs(date).format('YYYY-MM-DD'));
+                    }
+                  }}
+                  maximumDate={new Date()}
+                />
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity
+                    style={{ marginTop: 8, padding: 12, backgroundColor: Colors.primary, borderRadius: 8, alignItems: 'center' }}
+                    onPress={() => setShowDatePicker(false)}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '600' }}>Done</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+            {showHourPicker && (
+              <>
+                <DateTimePicker
+                  value={new Date(2000, 0, 1, historyHour ?? 0, historyMinute ?? 0)}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(event, date) => {
+                    if (Platform.OS === 'android') {
+                      setShowHourPicker(false);
+                      if (event.type === 'set' && date) {
+                        setHistoryHour(date.getHours());
+                        setHistoryMinute(date.getMinutes());
+                      }
+                    } else if (date) {
+                      setHistoryHour(date.getHours());
+                      setHistoryMinute(date.getMinutes());
+                    }
+                  }}
+                />
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity
+                    style={{ marginTop: 8, padding: 12, backgroundColor: Colors.primary, borderRadius: 8, alignItems: 'center' }}
+                    onPress={() => setShowHourPicker(false)}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '600' }}>Done</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+            {showMinutePicker && (
+              <>
+                <DateTimePicker
+                  value={new Date(2000, 0, 1, historyHour ?? 0, historyMinute ?? 0)}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(event, date) => {
+                    if (Platform.OS === 'android') {
+                      setShowMinutePicker(false);
+                      if (event.type === 'set' && date) {
+                        setHistoryMinute(date.getMinutes());
+                      }
+                    } else if (date) {
+                      setHistoryMinute(date.getMinutes());
+                    }
+                  }}
+                />
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity
+                    style={{ marginTop: 8, padding: 12, backgroundColor: Colors.primary, borderRadius: 8, alignItems: 'center' }}
+                    onPress={() => setShowMinutePicker(false)}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '600' }}>Done</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+
+            <View
+              style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 16 }}
+            >
+              <CustomButton
+                title="Cancel"
+                onPress={() => {
+                  setHistoryModalVisible(false);
+                  setShowDatePicker(false);
+                  setShowHourPicker(false);
+                  setShowMinutePicker(false);
+                }}
+                cancel
+              />
+              <CustomButton
+                title="Load history"
+                onPress={handleHistorySubmit}
+                loading={loading}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <CreateRoomModal
         visible={createRoomModal}
-        onClose={() => setCreateRoomModal(false)}
+        onClose={() => {
+          setCreateRoomModal(false);
+          setIsEditRoomMode(false);
+          setEditingRoomId(null);
+        }}
         roomData={roomData}
         onRoomDataChange={setRoomData}
         onSubmit={handleCreateRoomSubmit}
         loading={loading}
         showMessage={showMessage}
         initialMqttTopic={selectedDevice?.mqtt_topic || ''}
+        isEditMode={isEditRoomMode}
       />
     </View>
   );

@@ -19,7 +19,7 @@ export const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   roomBackgroundImage: {
-    opacity: 0.4,
+    opacity: 0.8,
   },
   roomOverlay: {
     position: 'absolute',
@@ -91,7 +91,7 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
   },
   infoContainer: {
-    padding: 16,
+    padding: 10,
     backgroundColor: Colors.white,
     borderTopWidth: 1,
     borderTopColor: Colors.lightGrayColor,
@@ -114,6 +114,51 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.mediumGrayColor,
     fontStyle: 'italic',
+  },
+  playbackBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.lightGrayColor,
+    gap: 10,
+  },
+  playbackButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: Colors.lightGrayColor,
+  },
+  playbackButtonActive: {
+    backgroundColor: Colors.primary,
+  },
+  playbackButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.blackColor,
+  },
+  playbackButtonTextActive: {
+    color: Colors.white,
+  },
+  progressTrack: {
+    flex: 1,
+    height: 8,
+    backgroundColor: Colors.lightGrayColor,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: Colors.primary,
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: 12,
+    color: Colors.mediumGrayColor,
+    minWidth: 120,
+    textAlign: 'right',
   },
 });
 

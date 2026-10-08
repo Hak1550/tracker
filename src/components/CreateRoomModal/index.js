@@ -23,6 +23,7 @@ const CreateRoomModal = ({
   loading,
   showMessage,
   initialMqttTopic,
+  isEditMode = false,
 }) => {
   const [imagePickerModalVisible, setImagePickerModalVisible] = useState(false);
 
@@ -122,7 +123,7 @@ const CreateRoomModal = ({
     >
       <View style={styles.overlay}>
         <View style={styles.container}>
-          <Text style={styles.title}>Create Room</Text>
+          <Text style={styles.title}>{isEditMode ? 'Edit Room' : 'Create Room'}</Text>
           <ScrollView showsVerticalScrollIndicator={false}>
             <CustomInput
               label="Label"
@@ -222,7 +223,7 @@ const CreateRoomModal = ({
               cancel
             />
             <CustomButton
-              title="Create Room"
+              title={isEditMode ? 'Save Changes' : 'Create Room'}
               onPress={onSubmit}
               loading={loading}
             />

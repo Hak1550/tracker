@@ -27,6 +27,9 @@ export const setAuthToken = (token) => {
   applyToken(apiSecondary);
 };
 
+export const getAuthToken = () =>
+  apiPrimary.defaults.headers.common?.Authorization;
+
 const normalizeError = (error) =>
   error?.response || { status: 0, data: { message: error.message } };
 

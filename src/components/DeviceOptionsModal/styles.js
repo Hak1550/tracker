@@ -60,6 +60,9 @@ export const styles = StyleSheet.create({
   buttonCreateRoom: {
     backgroundColor: '#4CAF50',
   },
+  buttonHistory: {
+    backgroundColor: '#9C27B0',
+  },
   buttonEdit: {
     backgroundColor: '#2196F3',
   },

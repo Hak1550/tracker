@@ -1,0 +1,16 @@
+diff --git a/node_modules/@react-native/community-cli-plugin/dist/commands/start/runServer.js b/node_modules/@react-native/community-cli-plugin/dist/commands/start/runServer.js
+index 5e6e682..f1dde69 100644
+--- a/node_modules/@react-native/community-cli-plugin/dist/commands/start/runServer.js
++++ b/node_modules/@react-native/community-cli-plugin/dist/commands/start/runServer.js
+@@ -22,6 +22,11 @@ var _metroCore = require("metro-core");
+ var _path = _interopRequireDefault(require("path"));
+ var _url = _interopRequireDefault(require("url"));
+ var _util = require("util");
++if (typeof _util.styleText !== "function") {
++  _util.styleText = function (style, text) {
++    return typeof text === "string" ? text : String(text);
++  };
++}
+ function _getRequireWildcardCache(e) {
+   if ("function" != typeof WeakMap) return null;
+   var r = new WeakMap(),

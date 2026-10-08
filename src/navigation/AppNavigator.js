@@ -8,6 +8,7 @@ import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
 import HomeScreen from '../screens/HomeScreen/HomeScreen';
 import VisualizeRoomScreen from '../screens/VisualizeRoomScreen/VisualizeRoomScreen';
+import HistoryVisualizeScreen from '../screens/HistoryVisualizeScreen/HistoryVisualizeScreen';
 import SmartImage from '../components/SmartImage';
 import { images } from '../assets/images/images';
 
@@ -67,6 +68,11 @@ const AppNavigator = () => {
             <Stack.Screen
               name="VisualizeRoom"
               component={VisualizeRoomScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="HistoryVisualize"
+              component={HistoryVisualizeScreen}
               options={{ headerShown: false }}
             />
           </>

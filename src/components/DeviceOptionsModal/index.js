@@ -11,9 +11,9 @@ const DeviceOptionsModal = ({
   onCreateRoom,
   onEdit,
   onDelete,
+  onHistory,
 }) => {
   const hasRoom = device?.room?.bound;
-
   return (
     <Modal
       visible={visible}
@@ -32,7 +32,7 @@ const DeviceOptionsModal = ({
         >
           <View style={styles.header}>
             <Text style={styles.title}>
-              {device?.deviceName}
+              {device?.room?.label}
             </Text>
             <Text style={styles.subtitle}>
               Choose an action
@@ -40,13 +40,29 @@ const DeviceOptionsModal = ({
           </View>
           <View style={styles.content}>
             {hasRoom ? (
-              <TouchableOpacity
-                style={[styles.button, styles.buttonOpen]}
-                onPress={onOpen}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.buttonText}>Open</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  style={[styles.button, styles.buttonOpen]}
+                  onPress={onOpen}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.buttonText}>Open</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.buttonHistory]}
+                  onPress={onHistory}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.buttonText}>History</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.buttonEdit]}
+                  onPress={onEdit}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.buttonText}>Edit</Text>
+                </TouchableOpacity>
+              </>
             ) : (
               <TouchableOpacity
                 style={[styles.button, styles.buttonCreateRoom]}
@@ -56,20 +72,13 @@ const DeviceOptionsModal = ({
                 <Text style={styles.buttonText}>Create Room</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity
-              style={[styles.button, styles.buttonEdit]}
-              onPress={onEdit}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.buttonText}>Edit</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={[styles.button, styles.buttonDelete]}
               onPress={onDelete}
               activeOpacity={0.8}
             >
               <Text style={styles.buttonText}>Delete</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
             <TouchableOpacity
               style={[styles.button, styles.buttonCancel]}
               onPress={onClose}
